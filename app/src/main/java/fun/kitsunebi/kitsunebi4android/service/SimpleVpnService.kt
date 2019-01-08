@@ -1,5 +1,6 @@
-package `fun`.kitsunebi.kitsunebi4android
+package `fun`.kitsunebi.kitsunebi4android.service
 
+import `fun`.kitsunebi.kitsunebi4android.R
 import android.annotation.TargetApi
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -17,7 +18,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 
-open class KitsunebiVpnService: VpnService() {
+open class SimpleVpnService: VpnService() {
     private var configString: String = ""
     private var pfd: ParcelFileDescriptor? = null
     private var inputStream: FileInputStream? = null
@@ -191,6 +192,8 @@ open class KitsunebiVpnService: VpnService() {
                 fos2.write(geositeBytes)
                 fos2.close()
             }
+
+            Tun2socks.setLocalDNS("223.5.5.5:53")
             Tun2socks.startV2Ray(flow, service, configString.toByteArray(), filesDir.absolutePath)
 
             sendBroadcast(Intent("vpn_started"))
