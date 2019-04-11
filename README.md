@@ -6,21 +6,75 @@ A fully-featured V2Ray client for Android.
 
 <a href="https://play.google.com/store/apps/details?id=fun.kitsunebi.kitsunebi4android"><img src="https://play.google.com/intl/en_us/badges/images/generic/en-play-badge.png" height="100"></a>
 
-Github Releases: https://github.com/eycorsican/Kitsunebi4Android/releases
+## 负载均衡策略
+Kitsunebi 使用的 Core 扩展了 v2ray-core 的功能，新增根据节点延迟值来选择最快速节点的策略，图形界面上可以添加节点组来开启，使用自定义配置的话，有以下配置项，所有时间数值单位为秒：
+```json
+{
+    "tag": "proxy",
+    "selector": [
+        "primary_proxy",
+        "backup_proxy"
+    ],
+    "strategy": "latency",
+    "interval": 60, // 每次测速之间的最少时间间隔
+    "totalMeasures": 3, // 每次测速中对每个 outbound 所做的请求次数
+    "delay": 1, // 每个测速请求之间的时间间隔
+    "timeout": 4, // 测速请求的超时时间
+    "probeTarget": "tcp:www.google.com:80", // 测速请求发送的目的地
+    "probeContent": "HEAD / HTTP/1.1\r\n\r\n" // 测速请求内容
+}
+```
 
-## 扩展功能
-扩展了 v2ray-core 的功能：
-- 新增 Latency Balancing Strategy：[详情及配置看这里](https://gist.github.com/eycorsican/356debc8295e752c1df6ad7286f98ad4)
+## 延迟测试
+延迟测试并非 ICMP Ping 或 TCP Ping，所用的方法跟负载均衡中的 latency 策略所用的方法大致一样，实际向 outbound 发送一个代理请求，记录返回非空数据所使用的时间。
 
-## 使用提示
+需要注意的是 `延迟` 跟 `速度` 并不是同一个概念，比如说同一个服务器上使用 QUIC 的 outbound 和一个使用 TCP 的 outbound，QUIC outbound 一般会有较低的延迟，但实际速度有可能比 TCP 慢。
 
-- 配置文件可使用一个常见的 V2Ray JSON 配置
-- App 使用较新的 v2ray-core 版本，你或许需要确保服务端也升级到相应的版本，具体版本号请看 Release Notes
-- 把配置文件复制粘贴至主界面后，点击连接按钮即可启动
-- 配置文件的 freedom outbound 推荐使用 [`UseIP` 策略](https://www.v2ray.com/chapter_02/protocols/freedom.html#outboundconfigurationobject)
-- 配置文件不需要有 inbound，app 使用了 `tun2socks` 作为 inbound，默认开启 [http,tls 流量嗅探](https://www.v2ray.com/chapter_02/01_overview.html#sniffingobject) ，默认的标识（tag）为 "tun2socks"
-- 关于 DNS 污染等问题，可以通过配置 V2Ray 的 DNS outbound 来解决，可在路由里添加一条识别出来自 tun2socks 的 DNS 流量，并转给 DNS outbound，具体请参考下面配置例子
-- 下面是一个可以拿来日常使用的配置模板，在 `outbounds` 中替换上你的服务器信息即可，其中的路由规则和 DNS 规则从这个 [规则集文件](https://github.com/eycorsican/rule-sets/blob/master/kitsunebi_default.conf) 生成：
+## 规则集
+规则集目前支持以下配置项：
+- Rule
+  - DOMAIN-KEYWORD（路由中的 `纯字符串`）
+  - DOMAIN-SUFFIX（路由中的 `子域名`）
+  - DOMAIN-FULL（路由中的 `完整匹配`）
+  - DOMAIN（同上，等效）
+  - IP-CIDR（路由中的 IP 或 CIDR 规则）
+  - PORT
+  - GEOIP（路由中的 GeoIP 规则）
+  - FINAL（根据域名策略，生成 network 规则 (`network: "tcp,udp"`) 或者 `IP 规则`(`ip: ["0.0.0.0/0", "::/0"]`) 作为一条默认出口规则）
+- RoutingDomainStrategy
+- LocalPolicy
+  - handshake
+  - connIdle
+  - uplinkOnly
+  - downlinkOnly
+  - bufferSize
+
+更多关于规则集的示例及说明可以看这里：https://github.com/eycorsican/rule-sets
+
+内置规则：
+- `geosite` 规则取自：https://github.com/v2ray/domain-list-community
+- `geoip` 规则为 MaxMind 的 GeoLite2，取自：https://github.com/v2ray/geoip
+
+第三方规则：
+- 兼容的第三方规则集，一般包含拦截广告、统计行为、隐私跟踪相关的规则：https://github.com/ConnersHua/Profiles
+
+## 关于 DNS 处理
+自 v1.0.0 起，默认的 DNS 处理方式为 Fake DNS，启用 Fake DNS 后，DNS 请求的流量几乎不会被传进 V2Ray，所以 V2Ray 的 `内置 DNS` 和 `DNS outbound` 配置不会起太大作用；当 Fake DNS 处于禁用状态，DNS 请求的流量会以正常 UDP 流量的形式进入 V2Ray，这时你可以使用 inbound tag 在路由中配置路由规则来识别出相应 DNS 流量，从而转发给 `DNS outbound`，从而让 V2Ray 的 `内置 DNS` 来处理（看下面配置示例）。如果使用自定义配置的同时开启 Fake DNS，则需要确保 freedom outbound 中的域名策略为 `非 AsIs`。
+
+为什么启用了 Fake DNS 后，freedom outbound 一定要用 `非 AsIs` 策略呢？如果你不熟悉 `Fake DNS` 怎么工作，可以看看 [这篇文章](https://medium.com/@TachyonDevel/%E6%BC%AB%E8%B0%88%E5%90%84%E7%A7%8D%E9%BB%91%E7%A7%91%E6%8A%80%E5%BC%8F-dns-%E6%8A%80%E6%9C%AF%E5%9C%A8%E4%BB%A3%E7%90%86%E7%8E%AF%E5%A2%83%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8-62c50e58cbd0)。
+启用 `Fake DNS` 后，本地的系统 DNS 缓存是被染污了的，如果 freedom outbound 用了 AsIs，对于那些非代理的域名请求，到了 freedom outbound 的时候，如果用系统 DNS 去解析（`AsIs` 策略），得到的 DNS 结果将会是被染污了不可用的 IP，会导致直连的请求发不出去。为了避免这个问题，方法就是让 freedom outbound 不使用系统的 DNS，也即不使用 `AsIs`，转而使用 V2Ray 的 `内置 DNS`（`UseIP` 策略）。
+
+Fake DNS 跟 V2Ray 的 `流量探测` 在效果上非常相似，目的同样是要拿到请求的域名，但工作原理上有较大差异：
+- Fake DNS
+  - 适用于任何请求的流量
+  - 对于走代理的请求，本地不会实际发出任何 DNS 请求流量（远程 DNS 解析）
+  - 会染污本地 DNS 缓存，VPN 关掉后的短暂时间内，可能会导致网络请求异常
+- `流量探测`
+  - 只适用 http/tls 流量
+  - 不能控制本地是否发出 DNS 请求流量（由 V2Ray 的 DNS 功能模块控制）
+
+## 配置示例
+
 ```json
 {
     "dns": {
@@ -106,7 +160,7 @@ Github Releases: https://github.com/eycorsican/Kitsunebi4Android/releases
         "domainStrategy": "IPIfNonMatch",
         "rules": [
             {
-				"inboundTag": ["tun2socks"],
+                "inboundTag": ["tun2socks"],
                 "network": "udp",
                 "port": 53,
                 "outboundTag": "dns-out",
@@ -213,11 +267,3 @@ Github Releases: https://github.com/eycorsican/Kitsunebi4Android/releases
     }
 }
 ```
-
-## 开发相关问题
-
-这个 V2Ray Android 客户端利用 `go-tun2socks` 把所有的 TCP/UDP 流量转给到 V2Ray 处理，所用的 `v2ray-core` 是没经过任何修改的官方版本，所以在配置和体验方面不会有太大差别。但在 Android 上有一些东西需要特殊处理，这也是在配置和使用上造成一些差别的地方。
-
-- 在 Android 上有几个情况会造成流量/请求的死循环，目前就我所知的有以下几个：
-  - 通过 VpnService 的 TUN 接口读取数据，再由代理程序代为发出时，如果不 [protect](https://developer.android.com/reference/android/net/VpnService#protect(int)) 代理程序用来发数据的 socket fd，代理程序发出的数据又会被转到 TUN 接口上，这个问题基本可以用 v2ray-core 提供的 `RegisterDialerController()` 和 `RegisterListenerController()` 两个接口完美解决
-  - 还有一些由 Go 的 [net.DefaultResolver](https://golang.org/src/net/lookup.go#L102) 所发出的 DNS 查询流量没有被 protect 起来，在一些特定的情况下也有可能引起死循环
